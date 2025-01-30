@@ -10,8 +10,8 @@ load_dotenv()
 system_prompt = """
 You are an AI assistant tasked with providing detailed answers based solely on the given context. Your goal is to analyze the information provided and formulate a comprehensive, well-structured response to the question.
 
-context will be passed as "Context:"
-user question will be passed as "Question:"
+Context will be passed as "Context:"
+User question will be passed as "Question:"
 
 To answer the question:
 1. Thoroughly analyze the context, identifying key information relevant to the question.
@@ -43,34 +43,44 @@ class LLMHandler:
         }
 
         self.ollama_models = {
-            
             "llama3.2:3b",  # The model you have installed
         }
 
         # Set API key only if using Groq
         self.api_key = os.getenv("GROQ_API_KEY") if self.model_name in self.groq_models else None
 
+    def _stream_response(self, text: str, chunk_size: int = 20):
+        """
+        Simulate streaming by breaking the text into chunks and yielding them.
+        """
+        for i in range(0, len(text), chunk_size):
+            yield text[i : i + chunk_size]
+
     def call_llm(self, context: str, prompt: str):
         """Call the appropriate LLM based on the selected model."""
         if self.model_name in self.groq_models:
             # Handle Groq API models
             llm = ChatGroq(model=self.model_name, api_key=self.api_key)
-            return llm.invoke(f"Context: {context}, Question: {prompt}").content
+            response = llm.invoke(f"Context: {context}\nQuestion: {prompt}")
+            
+            # Simulate streaming for Groq models
+            for chunk in self._stream_response(response.content):
+                yield chunk
 
         elif self.model_name in self.ollama_models:
             # Handle Ollama local models
             response = ollama.chat(
                 model=self.model_name,
-                stream=True,
+                stream=True,  # Enable streaming
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"Context: {context}, Question: {prompt}"},
+                    {"role": "user", "content": f"Context: {context}\nQuestion: {prompt}"},
                 ],
             )
-            result = ""
             for chunk in response:
                 if chunk["done"] is False:
-                    result += chunk["message"]["content"]
-            return result
+                    yield chunk["message"]["content"]
+                else:
+                    break
         else:
             raise ValueError(f"Model '{self.model_name}' not found in Groq or Ollama.")
